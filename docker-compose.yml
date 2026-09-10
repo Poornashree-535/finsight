@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: finsight-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-finsight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-finsight}
+      POSTGRES_DB: ${POSTGRES_DB:-finsight}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-finsight} -d ${POSTGRES_DB:-finsight}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .\backend
+      dockerfile: Dockerfile
+    container_name: finsight-backend
+    environment:
+      APP_NAME: FinSight API
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://finsight:finsight@postgres:5432/finsight
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-local-dev-secret-change-me}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      FRONTEND_ORIGIN: http://localhost:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - .\backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    build:
+      context: .\frontend
+      dockerfile: Dockerfile
+    container_name: finsight-frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - .\frontend:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - backend
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+
+volumes:
+  postgres_data:
